@@ -4,16 +4,19 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
 type apiResponse struct {
+	// padrao snakecase em go na parte do Json
 	SwiftMusicData *swiftMusicData `json:"swift_music_data,omitempty"`
 	Partial        bool            `json:"partial"`
 }
 
 type swiftMusicData struct {
+	// omitempty vai omitir caso o objeto esteja vazio
 	Quote string `json:"quote,omitempty"`
 	Song  string `json:"song,omitempty"`
 	Album string `json:"album,omitempty"`
@@ -22,8 +25,15 @@ type swiftMusicData struct {
 func main() {
 	router := gin.Default()
 	router.GET("/myapi", func(c *gin.Context) {
+		var res []*apiResponse
+		var result *apiResponse
+		var err error
 		newData, _ := c.GetQuery("album")
-		res, err := getTaylorQuotes(c, newData)
+		arrayData := strings.Split(newData, ",")
+		for i := 0; i < len(arrayData); i++ {
+			result, err = getTaylorQuotes(c, arrayData[i])
+			res = append(res, result)
+		}
 		if err != nil {
 			c.JSON(http.StatusPartialContent, res)
 			return
