@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -10,7 +10,7 @@ import (
 )
 
 type data struct {
-	Data string `json:data`
+	Data string
 }
 
 type swiftMusicData struct {
@@ -22,18 +22,24 @@ type swiftMusicData struct {
 func main() {
 	router := gin.Default()
 	router.GET("/myapi", func(c *gin.Context) {
-		newData := data{Data: c.DefaultQuery("data", "")}
-		// TODO: Ta concatenando
-		c.IndentedJSON(http.StatusOK, newData)
-		response, error := http.Get("https://taylorswiftapi.herokuapp.com/get")
-		if error != nil {
-			log.Fatalln(error)
+		newData, exist := c.GetQuery("data")
+		if exist {
+			c.JSON(http.StatusOK, data{Data: newData})
 		} else {
-			data, _ := ioutil.ReadAll(response.Body)
-			fmt.Println(string(data))
-			c.JSON(200, gin.H{})
+			getTaylorQuotes(c)
 		}
 	})
-
 	router.Run("localhost:8080")
+}
+
+func getTaylorQuotes(c *gin.Context) {
+	response, error := http.Get("https://taylorswiftapi.herokuapp.com/get")
+	if error != nil {
+		log.Fatalln(error)
+	}
+	data, _ := ioutil.ReadAll(response.Body)
+	response.Body.Close()
+	var swiftData swiftMusicData
+	json.Unmarshal(data, &swiftData)
+	c.JSON(http.StatusOK, swiftData)
 }
