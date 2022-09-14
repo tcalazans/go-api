@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 )
@@ -26,41 +28,57 @@ func main() {
 	router := gin.Default()
 	router.GET("/myapi", func(c *gin.Context) {
 		var res []*apiResponse
-		var result *apiResponse
-		var err error
+		var wg sync.WaitGroup
 		newData, _ := c.GetQuery("album")
 		arrayData := strings.Split(newData, ",")
+		wg.Add(len(arrayData))
+		taylorQuotesChannel := make(chan *apiResponse, len(arrayData))
 		for i := 0; i < len(arrayData); i++ {
-			result, err = getTaylorQuotes(c, arrayData[i])
-			res = append(res, result)
+			fmt.Println(arrayData)
+			go getTaylorQuotes(c, arrayData[i], taylorQuotesChannel, &wg)
 		}
-		if err != nil {
-			c.JSON(http.StatusPartialContent, res)
-			return
+		wg.Wait()
+		close(taylorQuotesChannel)
+		for ch := range taylorQuotesChannel {
+			res = append(res, ch)
+			fmt.Println(ch)
+		}
+		for _, r := range res {
+			if r.Partial {
+				c.JSON(http.StatusPartialContent, res)
+				return
+			}
 		}
 		c.JSON(http.StatusOK, res)
 	})
 	router.Run("localhost:8080")
 }
 
-func getTaylorQuotes(c *gin.Context, newData string) (*apiResponse, error) {
+func getTaylorQuotes(c *gin.Context, newData string, channel chan *apiResponse, wg *sync.WaitGroup) {
+	defer Recover(channel)
+	defer wg.Done()
 	response, err := http.Get("https://taylorswiftapi.herokuapp.com/get?album=" + newData)
 	apiResponse := &apiResponse{}
 	if err != nil {
-		apiResponse.Partial = true
-		return apiResponse, err
+		panic(err)
 	}
 	defer response.Body.Close()
 	data, err := ioutil.ReadAll(response.Body)
 	if err != nil {
-		apiResponse.Partial = true
-		return apiResponse, err
+		panic(err)
 	}
 	if string(data) == "" {
-		return apiResponse, nil
+		panic("no data found")
 	}
 	var swiftData swiftMusicData
 	json.Unmarshal(data, &swiftData)
 	apiResponse.SwiftMusicData = &swiftData
-	return apiResponse, nil
+	channel <- apiResponse
+}
+
+func Recover(c chan *apiResponse) {
+	if r := recover(); r != nil {
+		fmt.Println("caiu no panic")
+		c <- &apiResponse{Partial: true}
+	}
 }
